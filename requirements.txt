@@ -1,0 +1,10 @@
+pytorch-lightning==1.5.8
+pytorch==1.10.0
+scikit-learn==1.0.2
+numpy==1.22.0
+biopython==1.79
+fair-esm==0.4.0
+pandas==1.3.5
+transformers==4.15.0
+fire==0.4.0
+sentencepiece==0.1.96
