@@ -13,6 +13,7 @@ from torch.optim import optimizer
 
 from datamodule import ProteinDataModule
 from model_esm import EscapeMutationModelESM
+from model_prottrans import EscapeMutationModelProtTrans
 
 
 OPTIMIZERS = {
@@ -22,10 +23,11 @@ OPTIMIZERS = {
 }
 
 EMBEDDING_MODELS = {
-    "esm1_t6_43M_UR50S": esm.pretrained.esm1_t6_43M_UR50S,
-    "esm1b_t33_650M_UR50S": esm.pretrained.esm1b_t33_650M_UR50S,
-    "esm1_t12_85M_UR50S": esm.pretrained.esm1_t12_85M_UR50S,
-    "esm1_t34_670M_UR50S": esm.pretrained.esm1_t34_670M_UR50S,
+    "esm1_t6_43M_UR50S": (EscapeMutationModelESM, esm.pretrained.esm1_t6_43M_UR50S),
+    "esm1b_t33_650M_UR50S": (EscapeMutationModelESM, esm.pretrained.esm1b_t33_650M_UR50S),
+    "esm1_t12_85M_UR50S": (EscapeMutationModelESM, esm.pretrained.esm1_t12_85M_UR50S),
+    "esm1_t34_670M_UR50S": (EscapeMutationModelESM, esm.pretrained.esm1_t34_670M_UR50S),
+    "Rostlab/prot_t5_xl_uniref50": (EscapeMutationModelProtTrans, "Rostlab/prot_t5_xl_uniref50"),
 }
 
 
@@ -37,7 +39,7 @@ def fit(
     optimizer="RMSprop",
     lr=1e-3,
     weight_decay=0.10,
-    embedding_model="esm1_t6_43M_UR50S",
+    embedding_model="Rostlab/prot_t5_xl_uniref50",
     gpus=1,
     max_epochs=100,
     reference_protein_seq_fasta_path="./data/cov2_spike_wt.fasta",
@@ -51,8 +53,8 @@ def fit(
             f"optimizer must be on of {OPTIMIZERS.keys()}, but {optimizer} passed"
         )
 
-    run_embedding_model = EMBEDDING_MODELS.get(embedding_model)
-    if run_embedding_model is None:
+    RunModel, run_embedding = EMBEDDING_MODELS.get(embedding_model, (None, None))
+    if RunModel is None or run_embedding is None:
         raise ValueError(
             f"optimizer must be on of {EMBEDDING_MODELS.keys()}, but {embedding_model} passed"
         )
@@ -64,14 +66,15 @@ def fit(
         Path(run_path)
         / f"SF_{straight_forward}"
         / f"conv_dif_{conv_dif}"
-        / run_embedding_model.__name__
+        / RunModel.__name__
+        / str(run_embedding)
         / run_optimizer.__name__
     )
     run_path = run_path / f"wd_{weight_decay}__lr_{lr}__bs_{batch_size}"
 
-    model = EscapeMutationModelESM(
+    model = RunModel(
         reference_protein_seq=reference_protein_record.seq,
-        embedding_model=run_embedding_model,
+        embedding_model=run_embedding,
         Optimizer=run_optimizer,
         optimizer_kwargs={"lr": lr, "weight_decay": weight_decay},
         conv_dif=conv_dif,
@@ -104,7 +107,7 @@ def fit(
 
     dm.setup("test")
     preds = trainer.predict(model, dm.test_dataloader())
-    vdf = dm.val_df
+    vdf = dm.test_df
     vdf["preds"] = torch.softmax(torch.cat(preds), 1)[:, 1].cpu().detach().numpy()
     vdf.to_csv(run_path / "test_preds.csv", index=False)
 
